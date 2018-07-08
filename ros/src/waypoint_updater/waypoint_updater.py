@@ -56,7 +56,26 @@ class WaypointUpdater(object):
                 self.publish_waypoints(cloesest_waypoint_idx)
             rate.sleep()
                 
+    def get_closest_waypoint_idx(self):
+        x = self.pose.pose.position.x
+        y = self.pose.pose.position.y
+        # query the KDTree to return the index of the closest waypoint
+        closest_idx = self.waypoint_tree.query([x, y], 1)[1]
         
+        # Check if the closes is ahead or behind the vehicle
+        closest_coord = self.waypoints_2d[closest_idx]
+        prev_coord = self.waypoints_2d[closest_idx - 1]
+        
+        # Equation for hyperplace through closest coordinates
+        cl_vect = np.array(closest_coord)
+        prev_vect = np.array(prev_coord)
+        pos_vect = np.array([x, y])
+        
+        val = np.dot(cl_vect - prev_vect, pos_vect - cl_vect)
+        if val > 0
+            closest_idx = (closest_idx + 1) % len(self.waypoints_2d)
+            
+        return closest_idx
     def pose_cb(self, msg):
         self.pose = msg
 
