@@ -24,7 +24,7 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
-LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
+LOOKAHEAD_WPS = 200  # Number of waypoints we will publish. You can change this number
 MAX_DECEL = 0.5
 
 
@@ -44,7 +44,7 @@ class WaypointUpdater(object):
         self.pose = None
         self.stopline_wp_idx = -1
         self.waypoints_2d = None
-        self.waypoints_tree = None 
+        self.waypoints_tree = None
 
         self.loop()
 
@@ -90,13 +90,13 @@ class WaypointUpdater(object):
         self.pose = msg
 
     def waypoints_cb(self, waypoints):
-        self.base_lane = waypoints
         # Find LOOKAHEAD_WPS closest waypoints in front of the car
         if not self.waypoints_2d:
             # Convert to 2d waypoints for each waypoint in waypoints
             self.waypoints_2d = [(waypoint.pose.pose.position.x, waypoint.pose.pose.position.y) for waypoint in waypoints.waypoints]
             # KDTree allows you to look up the closest pt in space effecienctly
             self.waypoints_tree = KDTree(self.waypoints_2d)
+        self.base_lane = waypoints
 
     def traffic_cb(self, msg):
         # Callback for /traffic_waypoint message. Implement
@@ -114,7 +114,8 @@ class WaypointUpdater(object):
 
     def distance(self, waypoints, wp1, wp2):
         dist = 0
-        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
+
+        def dl(a, b): return math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2 + (a.z-b.z)**2)
         for i in range(wp1, wp2+1):
             dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
             wp1 = i
