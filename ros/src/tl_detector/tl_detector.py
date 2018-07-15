@@ -136,6 +136,7 @@ class TLDetector(object):
 
         Args:
             light (TrafficLight): light to classify
+            distance_to_light (number): estimate of how ahead the traffic light is -- used to filter out bad training data samples when collecting images
 
         Returns:
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
