@@ -1,5 +1,5 @@
 from keras.models import Sequential, Model
-from keras.layers import Flatten, Dense, Lambda, Activation, Dropout, Cropping2D, Input
+from keras.layers import Flatten, Dense, Lambda, Dropout, Cropping2D, Input
 from keras.layers.convolutional import Conv2D
 from keras.layers.pooling import MaxPooling2D
 from keras.models import load_model
@@ -16,6 +16,8 @@ CLASS_LABELS = [
     "green"
 ]
 
+IMAGE_SIZE = (150, 150)
+
 
 def make_simple():
     num_classes = 4
@@ -23,20 +25,14 @@ def make_simple():
     model = Sequential()
     model.add(Lambda(lambda x: (x - 128) / 128, input_shape=(150, 150, 3)))
     # model.add(Cropping2D(cropping=((70, 25), (0, 0))))
-    model.add(Conv2D(24, kernel_size=(5, 5), strides=(2, 2), activation='relu', padding='valid'))
-    model.add(Conv2D(48, kernel_size=(5, 5), strides=(2, 2), activation='relu', padding='valid'))
-    model.add(Conv2D(64, kernel_size=(3, 3), strides=(2, 2), activation='relu', padding='valid'))
+    model.add(Conv2D(12, kernel_size=(5, 5), strides=(2, 2), activation='relu', padding='valid'))
+    model.add(Conv2D(12, kernel_size=(5, 5), strides=(2, 2), activation='relu', padding='valid'))
+    model.add(Conv2D(12, kernel_size=(3, 3), strides=(2, 2), activation='relu', padding='valid'))
     model.add(Flatten())
+    model.add(Dense(512, activation="relu"))
     model.add(Dropout(0.5))
-    model.add(Dense(1164))
-    model.add(Dropout(0.25))
-    model.add(Activation('relu'))
-    model.add(Dense(512))
-    model.add(Activation('relu'))
-    model.add(Dense(256))
-    model.add(Activation('relu'))
-    model.add(Dense(num_classes))
-    model.add(Activation("softmax"))
+    model.add(Dense(256, activation="relu"))
+    model.add(Dense(num_classes, activation="softmax"))
 
     model.compile(loss='categorical_crossentropy',
                   optimizer='adam',
@@ -48,22 +44,17 @@ def make_simple():
 modelname_template = "tl_classifier" + "_{epoch:02d}.hdf5"
 
 
-DEFAULT_TRAINING_DIRECTORY = "../../../../../training_images/"
-DEFAULT_VALIDATION_DIRECTORY = "../../../../../validation_images/"
-
-
 def main():
 
     import argparse
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--train_dir', help='Path to directory containing labeled training images', default=DEFAULT_TRAINING_DIRECTORY)
-    parser.add_argument('--validation_dir', help='Path to directory containing labeled validation images', default=DEFAULT_VALIDATION_DIRECTORY)
+    parser.add_argument('--data-dir', help='Path to directory containing labeled training images', default="../../../../../vmshared")
 
     args = parser.parse_args()
 
-    training_directory = args.train_dir
-    validation_directory = args.validation_dir
+    training_directory = "{0}/training_images".format(args.data_dir)
+    validation_directory = "{0}/validation_images".format(args.data_dir)
 
     train_datagen = ImageDataGenerator(
         rescale=None,  # 1./255,
@@ -89,7 +80,8 @@ def main():
         target_size=(150, 150),
         batch_size=32,
         class_mode='categorical',
-        classes=CLASS_LABELS
+        classes=CLASS_LABELS,
+        save_to_dir="{0}/augmented_samples".format(args.data_dir)
     )
 
     model = make_simple()
@@ -102,9 +94,9 @@ def main():
     model.fit_generator(
         train_generator,
         steps_per_epoch=100,
-        epochs=5,
+        epochs=10,
         validation_data=validation_generator,
-        validation_steps=10,
+        validation_steps=20,
         callbacks=[ModelCheckpoint(filepath=modelname_template)]
     )
 

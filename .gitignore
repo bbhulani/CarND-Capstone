@@ -1,4 +1,5 @@
 *.py[cod]
+*.hdf5
 
 build
 devel
@@ -6,3 +7,5 @@ devel
 profile.tmp
 .vscode
 .DS_Store
+syncToGpuServer.config.js
+syncToRosVM.config.js
