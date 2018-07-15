@@ -131,12 +131,11 @@ class TLDetector(object):
         """
         return self.waypoints_tree.query((x, y), 1)[1]
 
-    def get_light_state(self, light, distance_to_light):
+    def get_light_state(self, light):
         """Determines the current color of the traffic light
 
         Args:
             light (TrafficLight): light to classify
-            distance_to_light (number): estimate of how ahead the traffic light is -- used to filter out bad training data samples when collecting images
 
         Returns:
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
@@ -146,23 +145,10 @@ class TLDetector(object):
         if(not self.camera_image):
             return self.last_state
 
-        self.image_count += 1
-
-        if IMAGE_HANDLING_MODE == "collect" and self.image_count % 20 == 0:
+        if IMAGE_HANDLING_MODE == "classify":
             cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
-
-            if distance_to_light < 150:
-                label = LIGHT_LABELS[light.state]
-            else:
-                label = TrafficLight.UNKNOWN
-            timestamp = time.time()
-            filename = '{IMAGE_DIR}/{label}/{timestamp}.jpg'.format(
-                IMAGE_DIR=IMAGE_DIR,
-                label=label,
-                timestamp=timestamp)
-            cv2.imwrite(filename, cv_image)
-        elif IMAGE_HANDLING_MODE == "classify":
             return self.light_classifier.get_classification(cv_image)
+        # otherwise return the light state from the simulator
         return light.state
 
     def process_traffic_lights(self):
@@ -196,8 +182,23 @@ class TLDetector(object):
                     closest_light = light
                     line_wp_idx = temp_wp_idx
 
+            self.image_count += 1
+            if IMAGE_HANDLING_MODE == "collect" and self.image_count % 20 == 0 and self.camera_image:
+                cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+
+                if diff < 150:
+                    label = LIGHT_LABELS[light.state]
+                else:
+                    label = LIGHT_LABELS[TrafficLight.UNKNOWN]
+                timestamp = time.time()
+                filename = '{IMAGE_DIR}/{label}/{timestamp}.jpg'.format(
+                    IMAGE_DIR=IMAGE_DIR,
+                    label=label,
+                    timestamp=timestamp)
+                cv2.imwrite(filename, cv_image)
+
         if closest_light:
-            state = self.get_light_state(closest_light, diff)
+            state = self.get_light_state(closest_light)
             return line_wp_idx, state
 
         return -1, TrafficLight.UNKNOWN
