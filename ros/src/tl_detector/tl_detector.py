@@ -19,7 +19,7 @@ STATE_COUNT_THRESHOLD = 3
 
 # Collect training images from simulator
 # One of "collect", "classify" or None
-IMAGE_HANDLING_MODE = "collect"
+IMAGE_HANDLING_MODE = None
 IMAGE_DIR = "training_images"
 
 LIGHT_LABELS = {
