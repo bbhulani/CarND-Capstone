@@ -74,7 +74,8 @@ class TLDetector(object):
         self.waypoints_tree = None
         self.image_count = 0
 
-        self.light_classifier = TLClassifier({v: k for (k, v) in LIGHT_LABELS.items()})
+        self.light_classifier = None  # Keep disabled for now -- will cause an error if model file not present
+        # self.light_classifier = TLClassifier({v: k for (k, v) in LIGHT_LABELS.items()})
         rospy.spin()
 
     def pose_cb(self, msg):
