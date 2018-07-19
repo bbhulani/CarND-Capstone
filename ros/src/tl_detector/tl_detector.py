@@ -75,6 +75,8 @@ class TLDetector(object):
         self.image_count = 0
 
         self.light_classifier = TLClassifier({v: k for (k, v) in LIGHT_LABELS.items()})
+
+        # this strikes me as an exceedingly ugly thing to do in a constructor ...
         rospy.spin()
 
     def pose_cb(self, msg):

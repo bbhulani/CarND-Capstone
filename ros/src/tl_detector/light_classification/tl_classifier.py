@@ -50,7 +50,11 @@ class TLClassifier(object):
 
         """
         with self.graph.as_default():
-            resized_image = cv2.resize(image, IMAGE_SIZE)
+            if IMAGE_SIZE[2] > 1:
+                resized_image = cv2.resize(image, IMAGE_SIZE[:2])
+            else:
+                grayscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                resized_image = cv2.resize(image, IMAGE_SIZE[:2])
             predicted_label = self.model.predict_classes(
                 np.expand_dims(resized_image, axis=0),
                 batch_size=1,

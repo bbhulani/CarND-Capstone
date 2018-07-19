@@ -50,7 +50,7 @@ class WaypointUpdater(object):
 
     def loop(self):
         # Control the rate at which waypoints are published
-        rate = rospy.Rate(50)
+        rate = rospy.Rate(20)
         while not rospy.is_shutdown():
             if self.pose and self.base_lane:
                 # Get the closest waypoint idx and then publish all waypoints
@@ -91,12 +91,12 @@ class WaypointUpdater(object):
 
     def waypoints_cb(self, waypoints):
         # Find LOOKAHEAD_WPS closest waypoints in front of the car
+        self.base_lane = waypoints
         if not self.waypoints_2d:
             # Convert to 2d waypoints for each waypoint in waypoints
             self.waypoints_2d = [(waypoint.pose.pose.position.x, waypoint.pose.pose.position.y) for waypoint in waypoints.waypoints]
             # KDTree allows you to look up the closest pt in space effecienctly
             self.waypoints_tree = KDTree(self.waypoints_2d)
-        self.base_lane = waypoints
 
     def traffic_cb(self, msg):
         # Callback for /traffic_waypoint message. Implement
