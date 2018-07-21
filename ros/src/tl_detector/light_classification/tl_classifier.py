@@ -5,7 +5,7 @@ import keras
 import keras.models
 import h5py
 
-from .train_classifier import CLASS_LABELS, IMAGE_SIZE
+from .train_classifier import CLASS_LABELS, COLOR_IMAGE_SIZE as IMAGE_SIZE
 
 import numpy as np
 import cv2

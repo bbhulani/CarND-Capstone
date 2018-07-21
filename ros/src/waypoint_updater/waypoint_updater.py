@@ -126,6 +126,8 @@ class WaypointUpdater(object):
 
         farthest_idx = closest_idx + LOOKAHEAD_WPS
         base_waypoints = self.base_lane.waypoints[closest_idx:farthest_idx]
+        if farthest_idx > len(self.base_lane.waypoints):
+            base_waypoints.extend(self.base_lane.waypoints[:farthest_idx - len(self.base_lane.waypoints)])
 
         # TODO: Rework this check
         #   Example:
