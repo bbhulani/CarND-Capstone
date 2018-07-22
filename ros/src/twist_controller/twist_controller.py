@@ -13,11 +13,11 @@ class Controller(object):
         # TODO: Implement
         self.yaw_controller = YawController(wheel_base, steer_ratio, 0.1, max_lat_accel, max_steer_angle)
 
-        kp = 0.5
-        ki = 0.0075
-        kd = 0.5
+        kp = 0.480
+        ki = 0.03
+        kd = 0.4
         mn = 0.0  # Minimum throttle value
-        mx = 1.0  # Maximum throttle value
+        mx = 0.5  # Maximum throttle value
         self.throttle_controller = PID(kp, ki, kd, mn, mx)
 
         tau = 0.5  # 1/(2pi*tau) = cutoff frequency
@@ -33,6 +33,14 @@ class Controller(object):
 
         self.last_time = rospy.get_time()
 
+        # Adding schmitt trigter to reset throttle PID after sustained repeated values
+        # The integral portion takes time to fully decay, in order to increase the rate of decay,
+        # the integral factor woudl also need increased, but this isn't suitable to the needs here
+        self.throttle_reset_threshold = 25          # Half sample frequency
+        self.throttle_reset_count = 0
+        self.throttle_reset_last_vel = 0
+        self.throttle_reset_hysteresis = 0.001
+
     def control(self, current_vel, dbw_enabled, linear_vel, angular_vel):
         # TODO: Change the arg, kwarg list to suit your needs
         # Return throttle, brake, steer
@@ -41,6 +49,18 @@ class Controller(object):
             return 0.0, 0.0, 0.0
 
         current_vel = self.vel_lpf.filt(current_vel)
+
+        # Schmitt trigger for resetting PID integral factor over periods of sustained
+        # repeated values
+        if current_vel <= (self.throttle_reset_last_vel + self.throttle_reset_hysteresis) and \
+           current_vel >= (self.throttle_reset_last_vel - self.throttle_reset_hysteresis):
+            self.throttle_reset_count = self.throttle_reset_count + 1
+            if self.throttle_reset_count >= self.throttle_reset_threshold:
+                self.throttle_controller.reset();
+                self.throttle_reset_count = 0
+        else:
+            self.throttle_reset_last_vel = current_vel
+            self.throttle_reset_count = 0
 
         steering = self.yaw_controller.get_steering(linear_vel, angular_vel, current_vel)
 
