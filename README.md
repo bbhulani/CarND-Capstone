@@ -1,9 +1,9 @@
 ### Team With No Name
 
-# Team Lead
+#### Team Lead
 Adrian Lebioda <adrianlebioda@gmail.com>
 
-# Team Members
+#### Team Members
 Przemysław Szewczyk <przemyslaw.szewczyk.pl@gmail.com>
 Nathaniel Cohen <breathevalue@icloud.com>
 Derek Nixon <derek.nixon+udacity@gmail.com>
