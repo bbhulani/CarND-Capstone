@@ -5,7 +5,7 @@ import keras
 import keras.models
 import h5py
 
-from .train_classifier import CLASS_LABELS, IMAGE_SIZE
+from .train_classifier import CLASS_LABELS, COLOR_IMAGE_SIZE, BW_IMAGE_SIZE
 
 import numpy as np
 import cv2
@@ -50,11 +50,11 @@ class TLClassifier(object):
 
         """
         with self.graph.as_default():
-            if IMAGE_SIZE[2] > 1:
-                resized_image = cv2.resize(image, IMAGE_SIZE[:2])
+            if image[2] > 1:
+                resized_image = cv2.resize(image, COLOR_IMAGE_SIZE[:2])
             else:
                 grayscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                resized_image = cv2.resize(image, IMAGE_SIZE[:2])
+                resized_image = cv2.resize(image, BW_IMAGE_SIZE[:2])
             predicted_label = self.model.predict_classes(
                 np.expand_dims(resized_image, axis=0),
                 batch_size=1,
