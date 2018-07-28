@@ -7,10 +7,10 @@ import numpy as np
 
 
 MASK_COLORS = {
+    "unknown": (0, 0, 0),
     "red": (255, 0, 0),
     "green": (0, 255, 0),
     "yellow": (255, 255, 0),
-    "unknown": (0, 0, 0)
 }
 
 
