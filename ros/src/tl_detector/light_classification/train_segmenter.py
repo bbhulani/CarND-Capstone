@@ -55,7 +55,7 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     """
 
     initialization_stddev = 1e-3
-    weight_penalty = 1e-5
+    weight_penalty = 1e-4
 
     # 1x1 convolutions on vgg layer7,4,3 to match training class dimensionality
     # (e.g. keep other dimensions the same but reduce dimensionality of the output
@@ -66,6 +66,7 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
         1,
         padding='same',
         kernel_initializer=tf.random_normal_initializer(stddev=initialization_stddev),
+        kernel_regularizer=tf.contrib.layers.l2_regularizer(weight_penalty)
     )
 
     vgg_layer4_out_match_num_classes = tf.layers.conv2d(
@@ -127,7 +128,7 @@ def optimize(nn_last_layer,
              learning_rate,
              num_classes,
              loss_function,  # "cross_entropy" or "weighted_cross_entropy" or "iou_estimate" or "weighted_iou_estimate"
-             regularization_loss=10e-5  # None or constant value by which to scale regularization loss
+             regularization_loss=10e-4  # None or constant value by which to scale regularization loss
              ):
     """
     Build the TensorFLow loss and optimizer operations.
@@ -380,8 +381,7 @@ def train(dataset_parameters,
           num_epochs,
           num_training_steps,
           num_validation_steps,
-          restore_from_checkpoint_dir,
-          generate_test_images=None
+          restore_from_checkpoint_dir
           ):
 
     with tf.Session() as sess:
@@ -543,7 +543,7 @@ def main():
         dataset = helper.TrafficLightParameters(args.data_dir)
 
     if args.restore_from_checkpoint:
-        restore_from_checkpoint_dir = dataset.model_dir()
+        restore_from_checkpoint_dir = dataset.model_savedir()
     else:
         restore_from_checkpoint_dir = None
 

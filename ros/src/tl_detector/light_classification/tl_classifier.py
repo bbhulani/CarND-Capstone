@@ -139,10 +139,12 @@ else:
             label_count = np.sum(labeled_image, axis=3)
 
             if label_count[1] > self.red_light_threshold:
-                class_label = 1
+                class_label = "red"
             elif label_count[2] > self.green_light_threshold and self.green_light_threshold < self.red_light_threshold:
-                class_label = 2
+                class_label = "green"
             elif label_count[2] > self.yellow_light_threshold and self.yellow_light_threshold < self.red_light_threshold and self.yellow_light_threshold < self.green_light_threshold:
-                class_label = 3
+                class_label = "yellow"
+            else:
+                class_label = "unknown"
 
             return self.class_label_to_state_as_int32[class_label]

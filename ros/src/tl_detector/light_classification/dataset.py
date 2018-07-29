@@ -471,8 +471,11 @@ class DatasetParameters:
     def model_dir(self):
         return os.path.join(self.data_dir, self.model_name)
 
+    def model_savedir(self):
+        return os.path.join(self.model_dir(), "model")
+
     def model_savepath(self):
-        return os.path.join(self.model_dir(), "model", "saved_model")
+        return os.path.join(self.model_savedir(), "saved_model")
 
     def output_dir(self):
         return os.path.join(self.model_dir(), "predictions")
@@ -481,8 +484,19 @@ class DatasetParameters:
         return recursive_glob(os.path.join(self.data_dir, self.model_name + "-preview"), '*.png', '*.jpg')
 
 
+def filter_images_without_groundtruth(images):
+    filtered = []
+    for image in images:
+        directory, base = os.path.dirname(image), os.path.basename(image)
+        groundtruth_image = os.path.join(directory, "groundtruth_" + base)
+        if os.path.exists(groundtruth_image):
+            filtered.append(image)
+    return filtered
+
+
 class TrafficLightParameters(DatasetParameters):
-    """Use this to train a semantic segmentation network using data from the bosch traffic light dataset: https://hci.iwr.uni-heidelberg.de/node/6132
+    """
+    Use this to train a semantic segmentation network using data from the bosch traffic light dataset: https://hci.iwr.uni-heidelberg.de/node/6132
     The network will predict for each pixel whether that pixel belongs to a light in red-light/green-light/yellow-light state or is an 'unknown'
     """
     model_name = "trafficlight-segmenter"
@@ -498,9 +512,12 @@ class TrafficLightParameters(DatasetParameters):
 
     def training_images(self):
         dataset_dir = os.path.join(self.data_dir, "bosch_train")
-        all_image_paths = recursive_glob(dataset_dir, '*.png')
+        all_image_paths = recursive_glob(dataset_dir, '*.png', "*.jpg")
         filtered = [i for i in all_image_paths if not 'groundtruth' in i]
-        # print(filtered)
+
+        # make sure that groundtruth images exists for each image in filtered
+        filtered = filter_images_without_groundtruth(filtered)
+
         return filtered
 
     def test_images(self):
@@ -511,6 +528,7 @@ class TrafficLightParameters(DatasetParameters):
 
 
 class RoadParameters(DatasetParameters):
+    """Road segmentation dataset"""
     model_name = "road-segmenter"
     num_classes = 3
     image_shape = (256, 320)
@@ -547,76 +565,219 @@ def main():
     parser = argparse.ArgumentParser()
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--bosch-file", help="Path to bosch yaml file", required=True)
+    parser.add_argument("--bosch-file", help="Path to bosch yaml file", required=False)
+    parser.add_argument("--labelme-dir", help="Path to directory containing exports from labelme", required=False)
+    parser.add_argument("--lisa-dir", help="Path to directory containing lisa traffic dataset", required=False)
 
     args = parser.parse_args()
 
-    source_file = args.bosch_file
-    source_dir = os.path.dirname(source_file)
+    if args.labelme_dir:
+        data, source_dir = load_labelme(args.labelme_dir)
+        import_bosch_style_data(data, source_dir)
+
+    if args.bosch_file:
+        data, source_dir = load_bosch(args.bosch_file)
+        import_bosch_style_data(data, source_dir)
+
+    if args.lisa_dir:
+        csv_files = recursive_glob(args.lisa_dir, "*BOX.csv")
+        print("Processing files: ", csv_files)
+        for csv_file in csv_files:
+            data, source_dir = load_lisa(csv_file)
+            import_bosch_style_data(data, source_dir)
+
+
+def load_bosch(yml_file):
+    bosch_data = []
+    source_file = yml_file
+    source_dir = os.path.dirname(yml_file)
 
     with open(source_file, 'r') as f:
-        data = yaml.safe_load(f)
+        bosch_data = yaml.safe_load(f)
+        return bosch_data, source_dir
 
-        for item in data:
-            source_path = os.path.join(source_dir, item.get("path"))
 
-            print("Reading image info from path {0}".format(source_path))
-            image = imread_rgb(source_path)
-            print("Image dimensions: {0}".format(image.shape))
-            size = image.shape[:2]
-            groundtruth_image = create_rgb_with_size(size[0], size[1])
-            for box in item.get("boxes", []):
-                # if box.get('occluded', True):
-                #     print("Skipping occluded box")
-                #     continue
-                label = box.get('label', None)
-                if label == "Red":
-                    mask_value = TrafficLightParameters.MASK_CLASSES[1]
-                elif label == "Green":
-                    mask_value = TrafficLightParameters.MASK_CLASSES[2]
-                elif label == "Yellow":
-                    mask_value = TrafficLightParameters.MASK_CLASSES[3]
-                elif label == "RedLeft":
-                    # not ideal ...
-                    mask_value = TrafficLightParameters.MASK_CLASSES[1]
-                elif label == "GreenLeft":
-                    # not ideal ...
-                    mask_value = TrafficLightParameters.MASK_CLASSES[2]
-                else:
-                    # we can't do anything with other guesses ...
-                    mask_value = TrafficLightParameters.MASK_CLASSES[0]
-                xmin = int(box.get('x_min'))
-                xmax = int(box.get('x_max'))
-                ymin = int(box.get('y_min'))
-                ymax = int(box.get('y_max'))
-                groundtruth_image = add_box_to_image(groundtruth_image, (xmin, xmax, ymin, ymax), mask_value)
+def load_lisa(lisa_csv_file):
+    import csv
 
-            groundtruth_image_path = os.path.join(
+    data = {}
+
+    with open(lisa_csv_file, 'r') as csvfile:
+        csvreader = csv.DictReader(csvfile, delimiter=';')
+        for row in csvreader:
+            path = row["Filename"].replace("dayTraining", "frames")
+
+            classlabel = row["Annotation tag"]
+
+            if classlabel == "stop" or classlabel == "stopLeft":
+                label = "Red"
+            elif classlabel == "go" or classlabel == "goForward" or classlabel == "goLeft":
+                label = "Green"
+            elif classlabel == "warning" or classlabel == "warningLeft":
+                label = "Yellow"
+            else:
+                raise Exception("Unknown label {0}".format(classlabel))
+
+            xmin = row["Upper left corner X"]
+            ymin = row["Upper left corner Y"]
+            xmax = row["Lower right corner X"]
+            ymax = row["Lower right corner Y"]
+
+            box = {}
+
+            box["x_min"] = xmin
+            box["x_max"] = xmax
+            box["y_min"] = ymin
+            box["y_max"] = ymax
+            box["label"] = label
+
+            if data.get(path, None) is None:
+                item = {}
+                item["path"] = path
+                item["boxes"] = [box]
+                data[path] = item
+            else:
+                item = data[path]
+                item["boxes"].append(box)
+
+    # turn back into list
+    items = data.values()
+
+    print("{0} items in file {1}".format(len(items), lisa_csv_file))
+
+    return items, os.path.dirname(lisa_csv_file)
+
+
+def load_labelme(base_dir):
+    import xmltodict
+    import json
+    xmlfiles = recursive_glob(base_dir, "*.xml")
+
+    data = []
+
+    for xmlfile in xmlfiles:
+        with open(xmlfile, 'r') as f:
+            labelme = xmltodict.parse(f.read())
+
+            item = labelme['annotation']
+
+            print(json.dumps(item, indent=4))
+
+            image_path = os.path.join("Images", item['folder'], item['filename'])
+
+            # hack -- changed collection name because collection's can only contain 20 images ...
+            image_path = image_path.replace("parking_lot_images", "greenlight")
+
+            box = {}
+
+            xmin = 9999999
+            xmax = 0
+            ymin = 9999999
+            ymax = 0
+
+            for point in item['object']['polygon']['pt']:
+                x, y = int(point['x']), int(point['y'])
+                print("x,y", x, y)
+                if x < xmin:
+                    xmin = x
+                if x > xmax:
+                    xmax = x
+                if y < ymin:
+                    ymin = y
+                if y > ymax:
+                    ymax = y
+
+            classlabel = item['object']['name']
+
+            if classlabel == "redlight":
+                label = "Red"
+            elif classlabel == "greenlight":
+                label = "Green"
+            elif classlabel == "yellowlight":
+                label = "Yellow"
+            else:
+                raise Exception("Error unknown label")
+
+            box["x_min"] = xmin
+            box["x_max"] = xmax
+            box["y_min"] = ymin
+            box["y_max"] = ymax
+            box["label"] = label
+
+            newitem = {}
+            newitem['path'] = image_path
+            # not generally correct -- but there is only one annotation per
+            # image in this dataset so this will work...
+            newitem['boxes'] = [box]
+
+            print(json.dumps(newitem, indent=4))
+
+            data.append(newitem)
+    return data, base_dir
+
+
+def import_bosch_style_data(bosch_data, source_dir):
+
+    for item in bosch_data:
+        source_path = os.path.join(source_dir, item.get("path"))
+
+        print("Reading image info from path {0}".format(source_path))
+        image = imread_rgb(source_path)
+        print("Image dimensions: {0}".format(image.shape))
+        size = image.shape[:2]
+        groundtruth_image = create_rgb_with_size(size[0], size[1])
+        for box in item.get("boxes", []):
+            # if box.get('occluded', True):
+            #     print("Skipping occluded box")
+            #     continue
+            label = box.get('label', None)
+            if label == "Red":
+                mask_value = TrafficLightParameters.MASK_CLASSES[1]
+            elif label == "Green":
+                mask_value = TrafficLightParameters.MASK_CLASSES[2]
+            elif label == "Yellow":
+                mask_value = TrafficLightParameters.MASK_CLASSES[3]
+            elif label == "RedLeft":
+                # not ideal ...
+                mask_value = TrafficLightParameters.MASK_CLASSES[1]
+            elif label == "GreenLeft":
+                # not ideal ...
+                mask_value = TrafficLightParameters.MASK_CLASSES[2]
+            else:
+                # we can't do anything with other guesses ...
+                mask_value = TrafficLightParameters.MASK_CLASSES[0]
+            xmin = int(box.get('x_min'))
+            xmax = int(box.get('x_max'))
+            ymin = int(box.get('y_min'))
+            ymax = int(box.get('y_max'))
+            groundtruth_image = add_box_to_image(groundtruth_image, (xmin, xmax, ymin, ymax), mask_value)
+
+        groundtruth_image_path = os.path.join(
+            os.path.dirname(source_path),
+            "groundtruth_" + os.path.basename(source_path)
+        )
+
+        print("Writing groundtruth image to {0}".format(os.path.abspath(groundtruth_image_path)))
+
+        imwrite_rgb(groundtruth_image_path, groundtruth_image)
+
+        segments = select_segments(image, groundtruth_image, TrafficLightParameters.MASK_CLASSES)
+
+        for i, (image_s, groundtruth_s) in enumerate(segments):
+            image_s_path = os.path.join(
                 os.path.dirname(source_path),
-                "groundtruth_" + os.path.basename(source_path)
+                "{0:02}_".format(i) + os.path.basename(source_path)
+            )
+            groundtruth_s_path = os.path.join(
+                os.path.dirname(source_path),
+                "groundtruth_" + "{0:02}_".format(i) + os.path.basename(source_path)
             )
 
-            print("Writing groundtruth image to {0}".format(os.path.abspath(groundtruth_image_path)))
+            print("Writing image segment to {0}".format(os.path.abspath(image_s_path)))
+            imwrite_rgb(image_s_path, image_s)
 
-            imwrite_rgb(groundtruth_image_path, groundtruth_image)
-
-            segments = select_segments(image, groundtruth_image, TrafficLightParameters.MASK_CLASSES)
-
-            for i, (image_s, groundtruth_s) in enumerate(segments):
-                image_s_path = os.path.join(
-                    os.path.dirname(source_path),
-                    "{0:02}_".format(i) + os.path.basename(source_path)
-                )
-                groundtruth_s_path = os.path.join(
-                    os.path.dirname(source_path),
-                    "groundtruth_" + "{0:02}_".format(i) + os.path.basename(source_path)
-                )
-
-                print("Writing image segment to {0}".format(os.path.abspath(image_s_path)))
-                imwrite_rgb(image_s_path, image_s)
-
-                print("Writing groundtruth image segment to {0}".format(os.path.abspath(groundtruth_s_path)))
-                imwrite_rgb(groundtruth_s_path, groundtruth_s)
+            print("Writing groundtruth image segment to {0}".format(os.path.abspath(groundtruth_s_path)))
+            imwrite_rgb(groundtruth_s_path, groundtruth_s)
 
 
 if __name__ == "__main__":
