@@ -23,7 +23,7 @@ if USE_KERAS_CLASSIFIER:
 
     model_name = "light_classification/tl_classifier_00.hdf5"
 
-    class TLClassfieir(object):
+    class TLClassifier(object):
         def __init__(self, class_label_to_state_as_int32):
 
             self.class_label_to_state_as_int32 = class_label_to_state_as_int32
@@ -88,7 +88,7 @@ else:
 
     from .dataset import reverse_one_hot
 
-    class TLClassfieir(object):
+    class TLClassifier(object):
         def __init__(self, class_label_to_state_as_int32):
 
             self.class_label_to_state_as_int32 = class_label_to_state_as_int32
@@ -97,9 +97,9 @@ else:
             if os.path.exists(model_name):
                 self.logits, self.keep_prob, self.input_image, self.predicted_label_probabilities = restore_model(self.session, model_name)
 
-            self.red_light_threshold = 20
-            self.green_light_threshold = 20
-            self.yellow_light_threshold = 20
+            self.red_light_threshold = .05
+            self.green_light_threshold = .05
+            self.yellow_light_threshold = .05
 
         def get_classification(self, images):
             """Determines the color of the traffic light in the image
@@ -127,24 +127,45 @@ else:
                 self.keep_prob: 1.0
             }
 
-            label_probabilities = sess.run([
-                self.predicted_label_probabilities
+            # compute class frequencies in python
+            # label_probabilities = sess.run([
+            #     self.predicted_label_probabilities
+            # ],
+            #     feed_dict=feed_dict
+            # )
+
+            # # minimal viable concept ... should do something better to go from
+            # # segmentation map to traffic light prediction ...
+            # labeled_image = reverse_one_hot(label_probabilities)
+            # label_count = np.sum(labeled_image, axis=3)
+
+            # compute class frequencies in tensorflow rather than python
+            label_count = sess.run([
+                tf.reduce_sum(
+                    tf.reduce_sum(
+                        tf.reduce_sum(
+                            tf.argmax(self.predicted_label_probabilities, axis=3),
+                            axis=1),
+                        axis=1),
+                    axis=0)
+
             ],
                 feed_dict=feed_dict
             )
 
-            # minimal viable concept, should do something better to go from
-            # segmentation map to traffic light prediction ...
-            labeled_image = reverse_one_hot(label_probabilities)
-            label_count = np.sum(labeled_image, axis=3)
+            print("label count: ", label_count)
 
-            if label_count[1] > self.red_light_threshold:
+            label_percentages = label_count / (image_shape[0] * image_shape[1])
+
+            nonlight_percent, red_percent, green_percent, yellow_percent = label_percentages
+
+            if red_percent > self.red_light_threshold:
                 class_label = "red"
-            elif label_count[2] > self.green_light_threshold and self.green_light_threshold < self.red_light_threshold:
+            elif green_percent > self.green_light_threshold:
                 class_label = "green"
-            elif label_count[2] > self.yellow_light_threshold and self.yellow_light_threshold < self.red_light_threshold and self.yellow_light_threshold < self.green_light_threshold:
+            elif yellow_percent > self.yellow_light_threshold:
                 class_label = "yellow"
             else:
-                class_label = "unknown"
+                label_summary = "unknown"
 
             return self.class_label_to_state_as_int32[class_label]
