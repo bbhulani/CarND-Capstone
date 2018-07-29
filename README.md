@@ -1,10 +1,10 @@
 ### Team With No Name
 
 #### Team Lead
-* Adrian Lebioda <adrianlebioda@gmail.com>
+* Adrian Lebioda <adrian.lebioda@harman.com>
 
 #### Team Members
-* Przemysław Szewczyk <przemyslaw.szewczyk.pl@gmail.com>
+* Przemysław Szewczyk <przemyslaw.szewczyk@harman.com>
 * Nathaniel Cohen <breathevalue@icloud.com>
 * Derek Nixon <derek.nixon+udacity@gmail.com>
 * Bhavin Bhulani <bhulani@gmail.com>
