@@ -33,10 +33,10 @@ train-segmenter.py produces a semantic segmentation network that attempts to pre
 
 The network consists of a pre-trained encoding layer based on a fully convolutional version of vgg16 -- then a decoding layer consisting of a stack of convolutional upsampling layers + skip layers to help capture information at different spatial scales.
 
-There was trouble training this network for this task. Because of the unbalanced classes -- the vast majority of the images in the training set consist primarily of 'unknown'/background class. The objects in the training set are fairly small. A couple of strategies were employed to try to work around this:
+There was initially trouble training this network for this task. It seemed there was a severe class imbalance issue because the vast majority of the images in the training set consisted primarily of 'unknown'/background class. The objects we are interested in (traffic lights) are fairly small portion of the images in the training set. A couple of strategies were employed to try to work around this:
 
-1.  loss_function="cross_entropy": First attempted to train the network with cross entropy loss function. This led to a network which converged on predicting all background output images due to the extreme class imbalance
+1.  loss_function="cross_entropy": First attempted to train the network with cross entropy loss function. This led to a network which converged on predicting all background for every pixel in the output image due to the extreme class imbalance
 2.  loss_function="weighted_cross_entropy": Next tried to apply weighting scheme to classes to see if could correct for the class imbalance -- this also didn't work.
 3.  loss_function="iou_estimate": Uses a differentiable estimate of the intersection over union metric -- as loss function. Still wouldn't converge.
 4.  loss_function="weighted_iou_estimate": Uses the same differentiable estimate of iou as loss function, but also applies weighting to address unbalanced classes.
-5.  Produce cropped training images with higher ratio of non-background to background by selecting the region around the labeled area of interest plus a small buffer of additional pixels
+5.  use cropped training images with higher ratio of non-background to background by creating training images by selecting around the labeled area of interest plus a small buffer of additional pixels

@@ -13,8 +13,6 @@ import cv2
 import operator
 import os
 
-from sklearn.model_selection import train_test_split
-from scipy.ndimage.measurements import find_objects
 import yaml
 
 
@@ -140,6 +138,7 @@ def region_size(roi):
 
 
 def select_segments(image, image_labels, mask_classes, buffer=10):
+    from scipy.ndimage.measurements import find_objects
 
     copy = np.zeros(image.shape[:2], np.uint8)
 
@@ -216,6 +215,7 @@ def gen_batch_function(dataset_parameters,
     :param image_shape: Tuple - Shape of image
     :return:
     """
+    from sklearn.model_selection import train_test_split
 
     training_images = dataset_parameters.training_images()
 
@@ -281,7 +281,15 @@ def gen_batch_function(dataset_parameters,
     return training_generator, validation_generator
 
 
-def gen_test_output(test_images, dataset_parameters, sess, logits, keep_prob, image_placeholder):
+def gen_test_output(test_images,
+                    dataset_parameters,
+                    sess,
+                    logits,
+                    keep_prob,
+                    image_placeholder,
+                    predict_probabilities,
+                    predict_label_distribution,
+                    ):
     """
     Generate test output using the test images
     :param sess: TF session
@@ -303,27 +311,21 @@ def gen_test_output(test_images, dataset_parameters, sess, logits, keep_prob, im
             image_placeholder: [image]
         }
 
-        image_softmax = sess.run(
-            [tf.nn.softmax(logits)],
-            feed_dict=feed_dict
-        )[0][0]
+        images_softmax, label_distribution = sess.run([predict_probabilities, predict_label_distribution],
+                                                      feed_dict=feed_dict
+                                                      )
 
-        print("image_softmax.shape", image_softmax.shape)
+        image_softmax = images_softmax[0]
 
-        print(image_softmax)
+        print("Label distribution for image {0}: {1}".format(image_file, label_distribution))
 
         image_with_pixels_classified = reverse_one_hot(image_softmax)
-        print("image_with_pixels_classified.shape", image_with_pixels_classified.shape)
-
         image_class_overlay = colour_code_segmentation(image_with_pixels_classified, dataset_parameters.MASK_CLASSES, np.uint8)
-
-        print(image.shape, image.dtype, image_class_overlay.shape, image_class_overlay.dtype)
 
         alpha = 0.5
         labeled_image = cv2.addWeighted(image_class_overlay, alpha, image, 1 - alpha, 0)
 
         yield image_file, np.array(labeled_image)
-        # yield image_file, np.array(labeled_image)
 
 
 def save_inference_samples(test_images,
@@ -332,18 +334,24 @@ def save_inference_samples(test_images,
                            logits,
                            keep_prob,
                            input_image,
-                           directory_suffix=None
+                           predict_probabilities,
+                           predict_label_distribution,
+                           directory_name=None
                            ):
 
     output_dir = dataset_parameters.output_dir()
 
-    if directory_suffix is not None:
-        output_dir = os.path.join(output_dir, "{0:03}".format(directory_suffix))
+    if isinstance(directory_name, int):
+        output_dir = os.path.join(output_dir, "{0:03}".format(directory_name))
+    elif directory_name is not None:
+        output_dir = os.path.join(output_dir, directory_name)
 
     # Make folder for output
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
     os.makedirs(output_dir)
+
+    print("Will write predicted images to {0}".format(output_dir))
 
     # Run NN on test images and save them to HD
     model_outputs = gen_test_output(
@@ -352,7 +360,10 @@ def save_inference_samples(test_images,
         sess,
         logits,
         keep_prob,
-        input_image
+        input_image,
+        predict_probabilities,
+        predict_label_distribution,
+
     )
 
     for i, (path, image) in enumerate(model_outputs):

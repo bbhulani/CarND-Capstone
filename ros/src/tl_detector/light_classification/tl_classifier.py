@@ -95,11 +95,11 @@ else:
             self.session = tf.Session()
 
             if os.path.exists(model_name):
-                self.logits, self.keep_prob, self.input_image, self.predicted_label_probabilities = restore_model(self.session, model_name)
+                self.logits, self.keep_prob, self.input_image, self.predict_label_probabilities, self.predict_label_distribution = restore_model(self.session, model_name)
 
-            self.red_light_threshold = .05
-            self.green_light_threshold = .05
-            self.yellow_light_threshold = .05
+            self.red_light_threshold = .01
+            self.green_light_threshold = .01
+            self.yellow_light_threshold = .01
 
         def get_classification(self, images):
             """Determines the color of the traffic light in the image
@@ -127,36 +127,12 @@ else:
                 self.keep_prob: 1.0
             }
 
-            # compute class frequencies in python
-            # label_probabilities = sess.run([
-            #     self.predicted_label_probabilities
-            # ],
-            #     feed_dict=feed_dict
-            # )
+            label_percentages = sess.run([self.predict_label_distribution],
+                                         feed_dict=feed_dict
+                                         )
 
-            # # minimal viable concept ... should do something better to go from
-            # # segmentation map to traffic light prediction ...
-            # labeled_image = reverse_one_hot(label_probabilities)
-            # label_count = np.sum(labeled_image, axis=3)
-
-            # compute class frequencies in tensorflow rather than python
-            label_count = sess.run([
-                tf.reduce_sum(
-                    tf.reduce_sum(
-                        tf.reduce_sum(
-                            tf.argmax(self.predicted_label_probabilities, axis=3),
-                            axis=1),
-                        axis=1),
-                    axis=0)
-
-            ],
-                feed_dict=feed_dict
-            )
-
-            print("label count: ", label_count)
-
-            label_percentages = label_count / (image_shape[0] * image_shape[1])
-
+            # minimal viable concept ... should do something better to go from
+            # segmentation map to traffic light prediction ...
             nonlight_percent, red_percent, green_percent, yellow_percent = label_percentages
 
             if red_percent > self.red_light_threshold:
@@ -166,6 +142,6 @@ else:
             elif yellow_percent > self.yellow_light_threshold:
                 class_label = "yellow"
             else:
-                label_summary = "unknown"
+                class_label = "unknown"
 
             return self.class_label_to_state_as_int32[class_label]

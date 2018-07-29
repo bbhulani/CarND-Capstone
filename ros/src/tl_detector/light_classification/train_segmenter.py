@@ -10,13 +10,6 @@ assert LooseVersion(tf.__version__) >= LooseVersion(
     '1.0'), 'Please use TensorFlow version 1.0 or newer.  You are using {}'.format(tf.__version__)
 print('TensorFlow Version: {}'.format(tf.__version__))
 
-# Check for a GPU
-if not tf.test.gpu_device_name():
-    warnings.warn(
-        'No GPU found. Please use a GPU to train your neural network.')
-else:
-    print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
-
 
 def load_vgg(sess, vgg_path):
     """
@@ -384,6 +377,13 @@ def train(dataset_parameters,
           restore_from_checkpoint_dir
           ):
 
+    # Check for a GPU
+    if not tf.test.gpu_device_name():
+        warnings.warn(
+            'No GPU found. Please use a GPU to train your neural network.')
+    else:
+        print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
+
     with tf.Session() as sess:
         # path to vgg model
         vgg_path = os.path.join(dataset_parameters.data_dir, "vgg")
@@ -446,7 +446,7 @@ def train(dataset_parameters,
                 logits,
                 keep_prob,
                 input_image,
-                directory_suffix=epoch
+                directory_name=epoch
             )
 
         train_nn(sess,
@@ -473,7 +473,12 @@ def train(dataset_parameters,
                  )
 
 
-def restore_model(sess, model_dir):
+def restore_model(sess,
+                  model_dir,
+                  num_classes=4):
+
+    print(model_dir)
+
     model_meta = ".".join([tf.train.latest_checkpoint(model_dir), "meta"])
     model_data = tf.train.latest_checkpoint(model_dir)
 
@@ -488,24 +493,45 @@ def restore_model(sess, model_dir):
     keep_prob = graph.get_tensor_by_name("keep_prob:0")
     input_image = graph.get_tensor_by_name("image_input:0")
 
-    predicted_label_probabilities = tf.nn.softmax(logits)
+    predict_label_probabilities = tf.nn.softmax(logits)
 
-    return logits, keep_prob, input_image, predicted_label_probabilities
+    predict_labels = tf.argmax(predict_label_probabilities, axis=-1)
+    # predict_labels = tf.Print(predict_labels, [predict_labels], "predict_labels: ")
+
+    sample_count = tf.size(predict_labels)
+    sample_count = tf.cast(sample_count, tf.float32)
+    # sample_count = tf.Print(sample_count, [sample_count], message="Sample count: ")
+
+    predict_class_one_hot = tf.one_hot(predict_labels, num_classes, axis=-1)
+    label_frequency = tf.reduce_sum(tf.reduce_sum(tf.reduce_sum(predict_class_one_hot, axis=0), axis=0), axis=0)
+    label_frequency = tf.cast(label_frequency, tf.float32)
+    # label_frequency = tf.Print(label_frequency, [label_frequency], message="label_frequency: ")
+
+    # print("predict_labels.shape: ", predict_labels.shape)
+    # print("predict_class_one_hot.shape: ", predict_class_one_hot.shape)
+    # print("label_frequency.shape: ", label_frequency.shape)
+    # print("sample_count.shape", sample_count.shape)
+
+    predict_label_distribution = tf.divide(label_frequency, sample_count)
+
+    return logits, keep_prob, input_image, predict_label_probabilities, predict_label_distribution
 
 
 def test(dataset_parameters, test_image_dir=None):
     tf.reset_default_graph()
 
-    model_dir = dataset_parameters.model_dir()
+    model_dir = dataset_parameters.model_savedir()
 
     with tf.Session() as sess:
-        logits, keep_prob, input_image = restore_model(sess, model_dir)
+        logits, keep_prob, input_image, predict_label_probabilities, predict_label_distribution = restore_model(sess, model_dir)
         print("Model restored.")
 
         if test_image_dir is None:
-            test_images = dataset_parameters.test_images()
+            test_images, dir_name = dataset_parameters.test_images(), "dataset_test_images"
         else:
-            test_images = helper.recursive_glob(test_image_dir, "*.png", "*.jpg")
+            test_images, dir_name = helper.recursive_glob(test_image_dir, "*.png", "*.jpg"), os.path.basename(os.path.normpath(test_image_dir))
+
+        print(dir_name)
 
         # Save inference data using helper.save_inference_samples
         helper.save_inference_samples(
@@ -514,7 +540,10 @@ def test(dataset_parameters, test_image_dir=None):
             sess,
             logits,
             keep_prob,
-            input_image
+            input_image,
+            predict_label_probabilities,
+            predict_label_distribution,
+            directory_name=dir_name
         )
 
 
