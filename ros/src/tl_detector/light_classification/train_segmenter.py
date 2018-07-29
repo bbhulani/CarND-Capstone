@@ -113,11 +113,41 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
         padding='same',
         kernel_initializer=tf.random_normal_initializer(stddev=initialization_stddev),
         kernel_regularizer=tf.contrib.layers.l2_regularizer(weight_penalty))
-    return layer3_to_inputimage_upsample
+
+    logits = tf.identity(layer3_to_inputimage_upsample, name="logits")
+
+    # turn logits into probabilities
+    predict_label_probabilities = tf.nn.softmax(logits, name="predict_label_probabilities")
+
+    # turn probabilities into class predictions
+    predict_labels = tf.argmax(predict_label_probabilities, axis=-1)
+    # predict_labels = tf.Print(predict_labels, [predict_labels], "predict_labels: ")
+
+    # count total number of predictions in batch
+    sample_count = tf.size(predict_labels)
+    sample_count = tf.cast(sample_count, tf.float32)
+    # sample_count = tf.Print(sample_count, [sample_count], message="Sample count: ")
+
+    # count number of predictions for each class in batch
+    predict_class_one_hot = tf.one_hot(predict_labels, num_classes, axis=-1)
+    label_frequency = tf.reduce_sum(tf.reduce_sum(tf.reduce_sum(predict_class_one_hot, axis=0), axis=0), axis=0)
+    label_frequency = tf.cast(label_frequency, tf.float32)
+    # label_frequency = tf.Print(label_frequency, [label_frequency], message="label_frequency: ")
+
+    # print("predict_labels.shape: ", predict_labels.shape)
+    # print("predict_class_one_hot.shape: ", predict_class_one_hot.shape)
+    # print("label_frequency.shape: ", label_frequency.shape)
+    # print("sample_count.shape", sample_count.shape)
+
+    # distribution by class of predictions
+    predict_label_distribution = tf.divide(label_frequency, sample_count, name="predict_label_distribution")
+
+    return logits, predict_label_probabilities, predict_label_distribution
 
 
-def optimize(nn_last_layer,
-             correct_label,
+def optimize(logits,
+             predict_layer_probabilities,
+             labels,
              learning_rate,
              num_classes,
              loss_function,  # "cross_entropy" or "weighted_cross_entropy" or "iou_estimate" or "weighted_iou_estimate"
@@ -125,15 +155,12 @@ def optimize(nn_last_layer,
              ):
     """
     Build the TensorFLow loss and optimizer operations.
-    :param nn_last_layer: TF Tensor of the last layer in the neural network
-    :param correct_label: TF Placeholder for the correct label image
+    :param logits: TF Tensor of the last layer in the neural network
+    :param labels: TF Placeholder for the correct label image
     :param learning_rate: TF Placeholder for the learning rate
     :param num_classes: Number of classes to classify
     :return: Tuple of (logits, train_op, cross_entropy_loss, metric_initializer, calc_mean_iou, update_confusion_matrix_op)
     """
-    logits = tf.identity(nn_last_layer, name="logits")
-    layer_probabilities = tf.nn.softmax(logits)
-    labels = correct_label
 
     report_class_counts = tf.reduce_sum(tf.reduce_sum(tf.reduce_sum(labels, axis=1), axis=1), axis=0)
 
@@ -171,10 +198,10 @@ def optimize(nn_last_layer,
     elif loss_function == "iou_estimate":
 
         # per http://www.cs.umanitoba.ca/~ywang/papers/isvc16.pdf equation (2) -- approximate intersection count as sum(logits * labels)
-        intersection = tf.reduce_sum(tf.multiply(layer_probabilities, labels))
+        intersection = tf.reduce_sum(tf.multiply(predict_layer_probabilities, labels))
 
         # per http://www.cs.umanitoba.ca/~ywang/papers/isvc16.pdf equation (4) -- approximate union count as sum(logits + labels - logits*labels )
-        union = tf.reduce_sum(tf.subtract(tf.add(layer_probabilities, labels), tf.multiply(layer_probabilities, labels)))
+        union = tf.reduce_sum(tf.subtract(tf.add(predict_layer_probabilities, labels), tf.multiply(predict_layer_probabilities, labels)))
 
         # estimate iou_loss: per http://www.cs.umanitoba.ca/~ywang/papers/isvc16.pdf equation (5) -- approximate loss as 1 - (intersection/union)
         loss = tf.subtract(tf.constant(1.0, dtype=tf.float32), tf.divide(intersection, union))
@@ -187,7 +214,7 @@ def optimize(nn_last_layer,
         # debug node to print out class weights and frequency
         # class_weights = tf.Print(class_weights, [class_weights, class_frequency], "\nclass weights and class frequency: ", summarize=1000)
 
-        weighted_probability = layer_probabilities * class_weights
+        weighted_probability = predict_layer_probabilities * class_weights
         weighted_labels = labels * class_weights
 
         # weighted version of intersection that reduces contribution from UNKNOWN pixels labels
@@ -209,7 +236,7 @@ def optimize(nn_last_layer,
     print("Logits shape", logits.get_shape())
 
     true_labels = tf.argmax(labels, axis=3)
-    predicted_labels = tf.argmax(layer_probabilities, axis=3)
+    predicted_labels = tf.argmax(predict_layer_probabilities, axis=3)
 
     print("tf.argmax(Labels) shape", true_labels.get_shape())
     print("tf.argmax(Logits) shape", predicted_labels.get_shape())
@@ -233,7 +260,7 @@ def optimize(nn_last_layer,
     # Define initializer to initialize/reset mean iou metrics -- this allows tracking stats a batch at a time
     metric_initializer = tf.variables_initializer(var_list=mean_iou_running_vars)
 
-    return logits, train_op, loss, metric_initializer, calc_mean_iou, update_confusion_matrix_op, report_class_counts
+    return train_op, loss, metric_initializer, calc_mean_iou, update_confusion_matrix_op, report_class_counts
 
 
 def train_nn(sess,
@@ -374,7 +401,8 @@ def train(dataset_parameters,
           num_epochs,
           num_training_steps,
           num_validation_steps,
-          restore_from_checkpoint_dir
+          restore_from_checkpoint_dir,
+          create_frozen=True
           ):
 
     # Check for a GPU
@@ -397,7 +425,7 @@ def train(dataset_parameters,
         # Build NN using load_vgg, layers, and optimize function
         input_image, keep_prob, layer3_out, layer4_out, layer7_out = load_vgg(
             sess, vgg_path)
-        result_output = layers(layer3_out, layer4_out, layer7_out, dataset_parameters.num_classes)
+        logits, predict_label_probabilities, predict_label_distribution = layers(layer3_out, layer4_out, layer7_out, dataset_parameters.num_classes)
 
         # Not this -- the labels are already one-hot encoded ...
         # groundtruth_placeholder = tf.placeholder(
@@ -412,8 +440,9 @@ def train(dataset_parameters,
             tf.float32, name="learning_rate"
         )
 
-        logits, train_op, compute_loss, metric_initializer, calc_mean_iou, update_confusion_matrix_op, report_class_counts = optimize(
-            result_output,
+        train_op, compute_loss, metric_initializer, calc_mean_iou, update_confusion_matrix_op, report_class_counts = optimize(
+            logits,
+            predict_label_probabilities,
             groundtruth_placeholder,
             learning_rate_placeholder,
             dataset_parameters.num_classes,
@@ -431,6 +460,21 @@ def train(dataset_parameters,
             if not os.path.exists(model_dir):
                 os.makedirs(model_dir)
             saver.save(sess, model_path, global_step=epoch)
+
+            if create_frozen:
+                # print(sess.graph.get_operations())
+
+                constant_graph = tf.graph_util.convert_variables_to_constants(
+                    sess,
+                    sess.graph_def,
+                    ["logits", "predict_label_probabilities", "predict_label_distribution"]
+                )
+
+                tf.train.write_graph(constant_graph,
+                                     model_dir,
+                                     'saved_model-{0}.pb'.format(epoch),
+                                     as_text=False)
+
             print("Model checkpoint saved")
 
         validation_preview_images = dataset_parameters.validation_preview_images()
@@ -446,6 +490,8 @@ def train(dataset_parameters,
                 logits,
                 keep_prob,
                 input_image,
+                predict_label_probabilities,
+                predict_label_distribution,
                 directory_name=epoch
             )
 
@@ -475,55 +521,74 @@ def train(dataset_parameters,
 
 def restore_model(sess,
                   model_dir,
-                  num_classes=4):
-
-    print(model_dir)
-
-    model_meta = ".".join([tf.train.latest_checkpoint(model_dir), "meta"])
-    model_data = tf.train.latest_checkpoint(model_dir)
-
-    print("model_meta {0} model_data {1}".format(model_meta, model_data))
-
-    saver = tf.train.import_meta_graph(model_meta)
-    saver.restore(sess, model_data)
+                  restore_frozen=False):
+    """
+    Restore the model from serialized form -- if restore_frozen is given, it should
+    be the string name of the frozen.pb file
+    """
 
     graph = tf.get_default_graph()
+
+    if restore_frozen:
+        print("Restoring frozen model {0}".format(restore_frozen))
+        # We load the protobuf file from the disk and parse it to retrieve the
+        # unserialized graph_def
+        with tf.gfile.GFile(restore_frozen, "rb") as f:
+            graph_def = tf.GraphDef()
+            graph_def.ParseFromString(f.read())
+
+        # Then, we import the graph_def into a new Graph
+
+        # The name var will prefix every op/nodes in your graph
+        # Since we load everything in a new graph, this is not needed
+        tf.import_graph_def(graph_def, name="")
+
+    else:
+        model_meta = ".".join([tf.train.latest_checkpoint(model_dir), "meta"])
+        model_data = tf.train.latest_checkpoint(model_dir)
+
+        print("Restoring non-frozen model graph: model_meta {0} model_data {1}".format(model_meta, model_data))
+        saver = tf.train.import_meta_graph(model_meta)
+        saver.restore(sess, model_data)
+
+    # retrieve the needed tensor inputs and outputs from the graph
+    # print(sess.graph.get_operations())
 
     logits = graph.get_tensor_by_name("logits:0")
     keep_prob = graph.get_tensor_by_name("keep_prob:0")
     input_image = graph.get_tensor_by_name("image_input:0")
+    predict_label_probabilities = graph.get_tensor_by_name("predict_label_probabilities:0")
+    predict_label_distribution = graph.get_tensor_by_name("predict_label_distribution:0")
 
-    predict_label_probabilities = tf.nn.softmax(logits)
+    # predict_labels = tf.argmax(predict_label_probabilities, axis=-1)
+    # # predict_labels = tf.Print(predict_labels, [predict_labels], "predict_labels: ")
 
-    predict_labels = tf.argmax(predict_label_probabilities, axis=-1)
-    # predict_labels = tf.Print(predict_labels, [predict_labels], "predict_labels: ")
+    # sample_count = tf.size(predict_labels)
+    # sample_count = tf.cast(sample_count, tf.float32)
+    # # sample_count = tf.Print(sample_count, [sample_count], message="Sample count: ")
 
-    sample_count = tf.size(predict_labels)
-    sample_count = tf.cast(sample_count, tf.float32)
-    # sample_count = tf.Print(sample_count, [sample_count], message="Sample count: ")
+    # predict_class_one_hot = tf.one_hot(predict_labels, num_classes, axis=-1)
+    # label_frequency = tf.reduce_sum(tf.reduce_sum(tf.reduce_sum(predict_class_one_hot, axis=0), axis=0), axis=0)
+    # label_frequency = tf.cast(label_frequency, tf.float32)
+    # # label_frequency = tf.Print(label_frequency, [label_frequency], message="label_frequency: ")
 
-    predict_class_one_hot = tf.one_hot(predict_labels, num_classes, axis=-1)
-    label_frequency = tf.reduce_sum(tf.reduce_sum(tf.reduce_sum(predict_class_one_hot, axis=0), axis=0), axis=0)
-    label_frequency = tf.cast(label_frequency, tf.float32)
-    # label_frequency = tf.Print(label_frequency, [label_frequency], message="label_frequency: ")
+    # # print("predict_labels.shape: ", predict_labels.shape)
+    # # print("predict_class_one_hot.shape: ", predict_class_one_hot.shape)
+    # # print("label_frequency.shape: ", label_frequency.shape)
+    # # print("sample_count.shape", sample_count.shape)
 
-    # print("predict_labels.shape: ", predict_labels.shape)
-    # print("predict_class_one_hot.shape: ", predict_class_one_hot.shape)
-    # print("label_frequency.shape: ", label_frequency.shape)
-    # print("sample_count.shape", sample_count.shape)
-
-    predict_label_distribution = tf.divide(label_frequency, sample_count)
+    # predict_label_distribution = tf.divide(label_frequency, sample_count, name="predict_label_distribution")
 
     return logits, keep_prob, input_image, predict_label_probabilities, predict_label_distribution
 
 
-def test(dataset_parameters, test_image_dir=None):
+def test(dataset_parameters, test_image_dir=None, use_frozen_model=None):
     tf.reset_default_graph()
 
-    model_dir = dataset_parameters.model_savedir()
+    model_dir, frozen_model_name = dataset_parameters.model_savedir(), None
 
     with tf.Session() as sess:
-        logits, keep_prob, input_image, predict_label_probabilities, predict_label_distribution = restore_model(sess, model_dir)
+        logits, keep_prob, input_image, predict_label_probabilities, predict_label_distribution = restore_model(sess, model_dir, use_frozen_model)
         print("Model restored.")
 
         if test_image_dir is None:
@@ -561,6 +626,7 @@ def main():
     parser.add_argument("--dataset", help="Choose dataset to train or categorize", default="traffic-lights", choices=["traffic-lights", "roads"])
     parser.add_argument("--restore-from-checkpoint", help="Restore model from latest checkpoint", action='store_true')
     parser.add_argument("--test-images-from-directory", help="Test images from directory (recursive)", default=None)
+    parser.add_argument("--use-frozen-model", help="Path to frozen model to test with", required=False)
 
     args = parser.parse_args()
 
@@ -585,7 +651,10 @@ def main():
               restore_from_checkpoint_dir=restore_from_checkpoint_dir
               )
     elif args.mode == "test":
-        test(dataset, args.test_images_from_directory)
+        if args.use_frozen_model:
+            test(dataset, args.test_images_from_directory, args.use_frozen_model)
+        else:
+            test(dataset, args.test_images_from_directory)
 
 
 if __name__ == '__main__':

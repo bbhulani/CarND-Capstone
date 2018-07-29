@@ -76,7 +76,7 @@ if USE_KERAS_CLASSIFIER:
 else:
     # Use semantic segmentation classifier
     IMAGE_SIZE = (256, 256)  # this can be any multiple of 32 for this model
-    model_name = "./trafficlight-segmenter/model"
+    MODEL_NAME = "./trafficlight-segmenter/saved_model-0.pb"
     from train_segmenter import restore_model
 
     CLASS_LABELS = [
@@ -95,8 +95,11 @@ else:
             self.session = tf.Session()
 
             if os.path.exists(model_name):
-                self.logits, self.keep_prob, self.input_image, self.predict_label_probabilities, self.predict_label_distribution = restore_model(self.session, model_name)
+                self.logits, self.keep_prob, self.input_image, self.predict_label_probabilities, self.predict_label_distribution = restore_model(
+                    self.session, "this arg isn't used -- ack python is hard to maintain", MODEL_NAME
+                )
 
+            # still TODO: tweak these ...
             self.red_light_threshold = .01
             self.green_light_threshold = .01
             self.yellow_light_threshold = .01
